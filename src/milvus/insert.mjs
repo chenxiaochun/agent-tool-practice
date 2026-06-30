@@ -22,7 +22,7 @@ async function getEmbeddings(text) {
     return embeddingModel.embedQuery(text);
 }
 
-async function main() {
+async function insertData() {
     try {
         console.log('Connecting to Milvus...');
         await client.connectPromise
@@ -123,4 +123,30 @@ async function main() {
     }
 }
 
-main();
+async function queryData() {
+    console.log('Connecting to Milvus...');
+    await client.connectPromise
+    console.log('Connected to Milvus');
+
+    console.log('Searching similar diaries...');
+    const query = '我想看关于爬山的日记'
+    const queryVector = await getEmbeddings(query);
+    const searchResult = await client.search({
+        collection_name: COLLECTION_NAME,
+        vector: queryVector,
+        limit: 2,
+        metric_type: MetricType.COSINE,
+        output_fields: ['id', 'content', 'date', 'mood', 'tags'],
+    })
+
+    searchResult.results.forEach((result) => {
+        console.log(`Diary ID: ${result.id}`);
+        console.log(`Content: ${result.content}`);
+        console.log(`Date: ${result.date}`);
+        console.log(`Mood: ${result.mood}`);
+        console.log(`Tags: ${result.tags}`);
+        console.log('='.repeat(80));
+    })
+}
+
+queryData();
