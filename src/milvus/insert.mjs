@@ -131,7 +131,7 @@ async function queryData() {
     console.log('Connected to Milvus');
 
     console.log('Searching similar diaries...');
-    const query = '我想看关于爬山的日记'
+    const query = '我想看关于心情糟糕的日记'
     const queryVector = await getEmbeddings(query);
     const searchResult = await client.search({
         collection_name: COLLECTION_NAME,
