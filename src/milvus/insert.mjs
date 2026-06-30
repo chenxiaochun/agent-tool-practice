@@ -3,19 +3,18 @@ import { MilvusClient, DataType, MetricType, IndexType } from '@zilliz/milvus2-s
 import { OpenAIEmbeddings } from '@langchain/openai';
 
 const COLLECTION_NAME = 'ai_diary';
-const VECTOR_DIM = 1024;
+const VECTOR_DIM = 1536; // text-embedding-v2 默认输出维度
 
 const embeddingModel = new OpenAIEmbeddings({
     apiKey: process.env.OPENAI_API_KEY,
     modelName: process.env.EMBEDDINGS_MODEL_NAME,
-    dimensions: VECTOR_DIM,
     configuration: {
         baseURL: process.env.OPENAI_BASE_URL,
     },
 });
 
 const client = new MilvusClient({
-    address: 'localhost:19530',
+    address: '192.168.3.2:19530',
 })
 
 async function getEmbeddings(text) {
@@ -115,6 +114,9 @@ async function insertData() {
             collection_name: COLLECTION_NAME,
             data: diary_data,
         })
+        if (insertResult.status?.error_code !== 'Success' && Number(insertResult.insert_cnt) === 0) {
+            throw new Error(insertResult.status?.reason ?? 'Insert failed');
+        }
         console.log('Data inserted successfully');
 
     } catch (error) {
@@ -144,9 +146,8 @@ async function queryData() {
         console.log(`Content: ${result.content}`);
         console.log(`Date: ${result.date}`);
         console.log(`Mood: ${result.mood}`);
-        console.log(`Tags: ${result.tags}`);
-        console.log('='.repeat(80));
     })
 }
 
+// insertData();
 queryData();
