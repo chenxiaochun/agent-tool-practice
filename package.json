@@ -23,6 +23,8 @@
     "chalk": "^5.6.2",
     "cheerio": "^1.2.0",
     "dotenv": "^17.4.2",
+    "epub2": "^3.0.2",
+    "html-to-text": "^10.0.0",
     "langchain": "^1.5.2",
     "text_splitter": "link:@langchain/community/text_splitter",
     "zod": "^4.4.3"
