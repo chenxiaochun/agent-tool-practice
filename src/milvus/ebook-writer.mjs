@@ -12,6 +12,14 @@ const CHUNK_SIZE = 500;
 const EPUB_FILE = '/Users/chenxiaochun/Documents/MyProject/agent-tool-practice/src/milvus/天龙八部.epub';
 const BOOK_NAME = parse(EPUB_FILE).name;
 
+const model = new ChatOpenAI({
+    modelName: process.env.MODEL_NAME,
+    apiKey: process.env.OPENAI_API_KEY,
+    configuration: {
+        baseURL: process.env.OPENAI_BASE_URL,
+    },
+});
+
 const embeddings = new OpenAIEmbeddings({
     modelName: process.env.EMBEDDINGS_MODEL_NAME,
     apiKey: process.env.OPENAI_API_KEY,
@@ -180,6 +188,59 @@ async function loadAndProcessEbook(bookId) {
     }
 }
 
+async function retrieveRelevalantContent(question, k = 3) {
+    try {
+        const queryVector = await getEmbeddings(question);
+        const searchResult = await client.search({
+            collection_name: COLLECTION_NAME,
+            vector: queryVector,
+            limit: k,
+            output_fields: ['id', 'book_id', 'book_name', 'chapter_name', 'index', 'content'],
+        })
+        return searchResult.results;
+    } catch (error) {
+        console.error('Error retrieving relevalant content:', error);
+        return [];
+    }
+}
+
+async function answerQuestion(question, k = 3) {
+    try {
+        const relevalantContent = await retrieveRelevalantContent(question, k);
+        if (relevalantContent.length === 0) {
+            return '没有找到相关内容';
+        }
+
+        relevalantContent.forEach(item => {
+            console.log(`ID：${item.id}`)
+            console.log(`Book ID: ${item.book_id}`)
+            console.log(`Book Name: ${item.book_name}`)
+            console.log(`Chapter Name: ${item.chapter_name}`)
+            console.log(`Index: ${item.index}`)
+            console.log(`内容: ${item.content}`)
+            console.log(`--------------------------------`)
+        });
+
+        const context = relevalantContent.map(item => `${item.chapter_name}第${item.index}段: ${item.content}`).join('\n');
+
+        const prompt = `
+        你是一个专业的书籍问答助手，请根据以下内容回答问题：
+        ${context}
+        问题：${question}
+        回答要求：
+        1. 回答问题时，请使用中文回答
+        2. 可以综合多个片段的信息来回答问题
+        3. 如果片段中没有相关信息，请如实告知用户
+        `
+
+        const response = await model.invoke(prompt)
+        return response.content;
+    } catch (error) {
+        console.error('Error answering question:', error);
+        return [];
+    }
+}
+
 async function main() {
     try {
         console.log('Connecting to Milvus...');
@@ -187,13 +248,19 @@ async function main() {
         console.log('Connected to Milvus');
 
         const bookId = 1;
-        await enuseCollection(bookId);
-        await loadAndProcessEbook(bookId);
+        // await enuseCollection(bookId);
+        // await loadAndProcessEbook(bookId);
+
     }
     catch (error) {
         console.error('Error:', error);
         process.exit(1);
     }
+
+    console.log('Searching similar chapters...')
+    const query = '乔峰会什么武功？'
+    const answer = await answerQuestion(query);
+    console.log(`回答：${answer}`)
 }
 
 main()
