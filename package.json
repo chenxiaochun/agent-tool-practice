@@ -25,6 +25,7 @@
     "dotenv": "^17.4.2",
     "epub2": "^3.0.2",
     "html-to-text": "^10.0.0",
+    "js-tiktoken": "^1.0.21",
     "langchain": "^1.5.2",
     "text_splitter": "link:@langchain/community/text_splitter",
     "zod": "^4.4.3"
