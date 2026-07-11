@@ -27,6 +27,7 @@
     "html-to-text": "^10.0.0",
     "js-tiktoken": "^1.0.21",
     "langchain": "^1.5.2",
+    "mysql2": "^3.22.6",
     "text_splitter": "link:@langchain/community/text_splitter",
     "zod": "^4.4.3"
   },
