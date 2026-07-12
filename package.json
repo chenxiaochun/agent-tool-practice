@@ -29,7 +29,8 @@
     "langchain": "^1.5.2",
     "mysql2": "^3.22.6",
     "text_splitter": "link:@langchain/community/text_splitter",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
     "oxfmt": "^0.56.0"
