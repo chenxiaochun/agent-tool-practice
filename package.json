@@ -28,6 +28,8 @@
     "js-tiktoken": "^1.0.21",
     "langchain": "^1.5.2",
     "mysql2": "^3.22.6",
+    "tencentcloud-sdk-nodejs": "^4.1.270",
+    "tencentcloud-sdk-nodejs-tts": "^4.1.237",
     "text_splitter": "link:@langchain/community/text_splitter",
     "zod": "^4.4.3",
     "zod-to-json-schema": "^3.25.2"
