@@ -31,10 +31,13 @@
     "tencentcloud-sdk-nodejs": "^4.1.270",
     "tencentcloud-sdk-nodejs-tts": "^4.1.237",
     "text_splitter": "link:@langchain/community/text_splitter",
+    "uuid": "^14.0.1",
+    "ws": "^8.21.1",
     "zod": "^4.4.3",
     "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
+    "@types/ws": "^8.18.1",
     "oxfmt": "^0.56.0"
   }
 }
