@@ -1,9 +1,9 @@
 import Redis from 'ioredis';
-
+import 'dotenv/config'
 const redis = new Redis({
-    host: 'localhost',
-    port: 6379,
-    db: 0,
+    host: process.env.REDIS_HOST,
+    port: process.env.REDIS_PORT,
+    db: process.env.REDIS_DB,
 })
 
 redis.on('connect', () => {
