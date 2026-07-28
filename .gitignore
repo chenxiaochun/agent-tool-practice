@@ -4,3 +4,4 @@ pnpm-lock.yaml
 volumes/
 chat_history.json
 *.mp3
+*.sqlite
