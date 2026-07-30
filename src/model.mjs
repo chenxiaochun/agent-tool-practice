@@ -1,4 +1,4 @@
-import { ChatOpenAI } from '@langchain/openai';
+import { ChatOpenAI, OpenAIEmbeddings } from '@langchain/openai';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -9,4 +9,10 @@ export const model = new ChatOpenAI({
     configuration: {
         baseURL: process.env.OPENAI_BASE_URL,
     },
+});
+
+
+export const embeddings = new OpenAIEmbeddings({
+    model: process.env.EMBEDDINGS_MODEL_NAME,
+    dimensions: 1024,
 });

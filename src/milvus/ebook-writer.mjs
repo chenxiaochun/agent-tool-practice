@@ -6,11 +6,14 @@ import { EPubLoader } from '@langchain/community/document_loaders/fs/epub';
 import { RecursiveCharacterTextSplitter } from '@langchain/classic/text_splitter';
 
 const COLLECTION_NAME = 'ebook_collection';
-const VECTOR_DIM = 1536;
+/** 与 src/model.mjs / naive-rag 保持一致；text-embedding-v3 常用 1024 维 */
+const VECTOR_DIM = 1024;
 const CHUNK_SIZE = 500;
 
 const EPUB_FILE = '/Users/chenxiaochun/Documents/MyProject/agent-tool-practice/src/milvus/天龙八部.epub';
 const BOOK_NAME = parse(EPUB_FILE).name;
+/** 与 docker-compose / naive-rag 一致；可用 MILVUS_ADDRESS 覆盖 */
+const MILVUS_ADDRESS = process.env.MILVUS_ADDRESS ?? 'localhost:19530';
 
 const model = new ChatOpenAI({
     modelName: process.env.MODEL_NAME,
@@ -23,17 +26,44 @@ const model = new ChatOpenAI({
 const embeddings = new OpenAIEmbeddings({
     modelName: process.env.EMBEDDINGS_MODEL_NAME,
     apiKey: process.env.OPENAI_API_KEY,
+    dimensions: VECTOR_DIM,
     configuration: {
         baseURL: process.env.OPENAI_BASE_URL,
     },
 });
 
 const client = new MilvusClient({
-    address: '192.168.3.2:19530',
+    address: MILVUS_ADDRESS,
 });
 
-const getEmbeddings = async (text) => {
-    return embeddings.embedQuery(text);
+/** 限流时退避重试，避免整章 Promise.all 一把梭直接 429 */
+async function getEmbeddings(text, retries = 6) {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+            return await embeddings.embedQuery(text);
+        } catch (error) {
+            const isRateLimit =
+                error?.status === 429 ||
+                error?.lc_error_code === 'MODEL_RATE_LIMIT' ||
+                /rate.?limit|429/i.test(String(error?.message ?? ''));
+            if (!isRateLimit || attempt === retries) throw error;
+            const waitMs = Math.min(60_000, 2000 * 2 ** attempt);
+            console.warn(`embedding 限流，${waitMs}ms 后重试 (${attempt + 1}/${retries})...`);
+            await new Promise((r) => setTimeout(r, waitMs));
+        }
+    }
+}
+
+/** 该章首段 id 已存在则视为已入库，支持断点续跑 */
+async function chapterAlreadyInserted(bookId, chapterIndex) {
+    const firstId = bookId * 100000000 + chapterIndex * 10000;
+    const result = await client.query({
+        collection_name: COLLECTION_NAME,
+        filter: `id == ${firstId}`,
+        output_fields: ['id'],
+        limit: 1,
+    });
+    return (result.data?.length ?? 0) > 0;
 }
 
 async function enuseCollection(bookId) {
@@ -114,18 +144,23 @@ async function insertChunkBatch(chunks, bookId, chapterIndex, chapterName) {
             return 0;
         }
 
-        const insertData = await Promise.all(chunks.map(async (chunk, chunkIndex) => {
-            const vector = await getEmbeddings(chunk);
-            return {
+        // 逐条生成向量（比整章并发更稳，少触发限流）
+        const insertData = [];
+        for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+            const vector = await getEmbeddings(chunks[chunkIndex]);
+            insertData.push({
                 id: bookId * 100000000 + chapterIndex * 10000 + chunkIndex,
                 book_id: bookId,
                 book_name: BOOK_NAME,
                 chapter_name: chapterName,
                 index: chunkIndex,
-                content: chunk,
-                vector: vector,
+                content: chunks[chunkIndex],
+                vector,
+            });
+            if ((chunkIndex + 1) % 10 === 0 || chunkIndex + 1 === chunks.length) {
+                console.log(`  向量进度 ${chunkIndex + 1}/${chunks.length}`);
             }
-        }))
+        }
 
         const insertResult = await client.insert({
             collection_name: COLLECTION_NAME,
@@ -173,6 +208,11 @@ async function loadAndProcessEbook(bookId) {
                 continue;
             }
 
+            if (await chapterAlreadyInserted(bookId, i)) {
+                console.log(`第${i + 1}章已存在，跳过（断点续跑）`)
+                continue;
+            }
+
             console.log('生成向量...')
             const chapterName = chapter.metadata.title || `第${i + 1}章`;
             const insertedCount = await insertChunkBatch(chunks, bookId, i, chapterName);
@@ -190,11 +230,20 @@ async function loadAndProcessEbook(bookId) {
 
 async function retrieveRelevalantContent(question, k = 3) {
     try {
+        const hasCollection = await client.hasCollection({ collection_name: COLLECTION_NAME });
+        if (!hasCollection.value) {
+            console.error(
+                `集合 ${COLLECTION_NAME} 不存在。请先取消注释 main 里的 enuseCollection / loadAndProcessEbook 完成入库。`,
+            );
+            return [];
+        }
+
         const queryVector = await getEmbeddings(question);
         const searchResult = await client.search({
             collection_name: COLLECTION_NAME,
             vector: queryVector,
             limit: k,
+            metric_type: MetricType.COSINE,
             output_fields: ['id', 'book_id', 'book_name', 'chapter_name', 'index', 'content'],
         })
         return searchResult.results;
@@ -243,24 +292,27 @@ async function answerQuestion(question, k = 3) {
 
 async function main() {
     try {
-        console.log('Connecting to Milvus...');
+        console.log(`Connecting to Milvus (${MILVUS_ADDRESS})...`);
         await client.connectPromise;
         console.log('Connected to Milvus');
 
         const bookId = 1;
+        // 首次 / 断点续跑时打开；数据已齐后请保持注释，只做问答
         // await enuseCollection(bookId);
         // await loadAndProcessEbook(bookId);
 
+        // 问答前确保集合已加载（若刚重启过 Milvus）
+        await client.loadCollection({ collection_name: COLLECTION_NAME });
+
+        console.log('Searching similar chapters...')
+        const query = '乔峰会什么武功？'
+        const answer = await answerQuestion(query);
+        console.log(`回答：${answer}`)
     }
     catch (error) {
         console.error('Error:', error);
         process.exit(1);
     }
-
-    console.log('Searching similar chapters...')
-    const query = '乔峰会什么武功？'
-    const answer = await answerQuestion(query);
-    console.log(`回答：${answer}`)
 }
 
 main()
