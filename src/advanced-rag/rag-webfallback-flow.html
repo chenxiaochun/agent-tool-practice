@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RAG Web Fallback · 一眼看懂</title>
+    <style>
+      :root {
+        --bg: #f6f4ef;
+        --surface: #fffdf8;
+        --ink: #1c1a16;
+        --muted: #6b6458;
+        --line: #ddd5c6;
+        --accent: #0f6a5a;
+        --accent-soft: #d8efe9;
+        --warn: #9a5b16;
+        --warn-soft: #f3e4cc;
+        --idle: #ece7dc;
+        --shadow: 0 1px 0 rgba(28, 26, 22, 0.04);
+        --mono: "IBM Plex Mono", "SF Mono", Menlo, Consolas, monospace;
+        --sans: "Source Han Sans SC", "Noto Sans SC", "PingFang SC",
+          "Hiragino Sans GB", "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: var(--sans);
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 12% 8%, #efe8d8 0, transparent 42%),
+          radial-gradient(circle at 88% 0%, #e4efe9 0, transparent 36%),
+          var(--bg);
+        line-height: 1.55;
+      }
+
+      .wrap {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 32px 20px 64px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 28px;
+        letter-spacing: -0.02em;
+      }
+
+      h2 {
+        margin: 28px 0 12px;
+        font-size: 18px;
+      }
+
+      h3 {
+        margin: 0 0 8px;
+        font-size: 15px;
+      }
+
+      .lead {
+        color: var(--muted);
+        margin: 0 0 20px;
+        max-width: 62ch;
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 16px;
+      }
+
+      .stat {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px 14px;
+        box-shadow: var(--shadow);
+      }
+
+      .stat strong {
+        display: block;
+        font-size: 22px;
+        font-family: var(--mono);
+        color: var(--accent);
+      }
+
+      .stat span {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .callout {
+        background: var(--accent-soft);
+        border: 1px solid #b7d9cf;
+        border-radius: 12px;
+        padding: 14px 16px;
+        margin-bottom: 8px;
+      }
+
+      .callout b {
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      .panel {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 16px;
+        box-shadow: var(--shadow);
+        margin-top: 12px;
+      }
+
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .between {
+        justify-content: space-between;
+      }
+
+      button {
+        font: inherit;
+        cursor: pointer;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--ink);
+        padding: 8px 14px;
+      }
+
+      button:hover:not(:disabled) {
+        border-color: #b9b09d;
+      }
+
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+
+      button.ghost {
+        background: transparent;
+      }
+
+      .hint {
+        color: var(--muted);
+        font-size: 13px;
+        margin: 8px 0 0;
+      }
+
+      svg.flow {
+        width: 100%;
+        max-width: 720px;
+        display: block;
+        margin: 8px auto 0;
+      }
+
+      .node-box {
+        cursor: pointer;
+      }
+
+      .node-box rect {
+        stroke-width: 1.25;
+      }
+
+      .node-box.active rect {
+        fill: var(--accent-soft);
+        stroke: var(--accent);
+      }
+
+      .node-box.selected rect {
+        fill: var(--accent);
+        stroke: var(--accent);
+      }
+
+      .node-box.idle rect {
+        fill: var(--idle);
+        stroke: var(--line);
+      }
+
+      .node-box text {
+        font-family: var(--sans);
+        pointer-events: none;
+      }
+
+      .node-box.selected text {
+        fill: #fff;
+      }
+
+      .edge {
+        fill: none;
+        stroke: #c9bfae;
+        stroke-width: 1.25;
+        opacity: 0.5;
+      }
+
+      .edge.on {
+        stroke: var(--accent);
+        stroke-width: 2.4;
+        opacity: 1;
+      }
+
+      .edge.back {
+        stroke-dasharray: 6 4;
+      }
+
+      .edge-label {
+        font-size: 10px;
+        fill: #8a8072;
+      }
+
+      .edge-label.on {
+        fill: var(--accent);
+      }
+
+      .steps {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 12px 0;
+      }
+
+      .detail {
+        border-top: 1px solid var(--line);
+        margin-top: 14px;
+        padding-top: 14px;
+      }
+
+      .analogy {
+        color: var(--muted);
+        margin: 0 0 8px;
+      }
+
+      .code {
+        font-family: var(--mono);
+        font-size: 12px;
+        background: #f1ece2;
+        border-radius: 6px;
+        padding: 2px 6px;
+      }
+
+      .writes {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 6px;
+      }
+
+      .foot {
+        margin-top: 10px;
+        padding: 10px 12px;
+        background: #f1ece2;
+        border-radius: 8px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+
+      th,
+      td {
+        text-align: left;
+        padding: 10px 8px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--muted);
+        font-weight: 600;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      tr.hl td {
+        background: var(--accent-soft);
+      }
+
+      .badge {
+        display: inline-block;
+        font-size: 12px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: var(--warn-soft);
+        color: var(--warn);
+      }
+
+      @media (max-width: 720px) {
+        .stats {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>RAG Web Fallback · 一眼看懂</h1>
+      <p class="lead">
+        本地优先，不够再联网一次。选路径看整条线，点节点看细节，用「下一步」跟一遍执行。
+        对应源码：
+        <span class="code">src/advanced-rag/rag-webfallback.mjs</span>
+      </p>
+
+      <div class="stats">
+        <div class="stat"><strong>6</strong><span>图节点</span></div>
+        <div class="stat"><strong>1 次</strong><span>最多联网</span></div>
+        <div class="stat"><strong>3</strong><span>典型路径</span></div>
+        <div class="stat"><strong>2 次</strong><span>评估最多执行</span></div>
+      </div>
+
+      <div class="callout">
+        <b>先记这三句话</b>
+        1）先路由：要不要查资料。2）复杂题先本地检索，再评估够不够。3）不够只外借一次（虚线回环），然后必须生成。
+      </div>
+
+      <h2>选一条真实执行路径</h2>
+      <div class="row" id="scenarioBtns"></div>
+      <p class="hint" id="scenarioWhen"></p>
+
+      <div class="panel">
+        <div class="row between">
+          <h3 style="margin: 0">流程图（高亮 = 当前路径）</h3>
+          <span class="badge">可点击节点</span>
+        </div>
+        <div id="flow"></div>
+        <p class="hint">
+          实线：正常前进 · 虚线：web → evaluate 回环（只允许一次） · 当前步进：
+          <span id="currentStepLabel"></span>
+        </p>
+      </div>
+
+      <div class="panel">
+        <div class="row between">
+          <h3 style="margin: 0" id="stepTitle">逐步播放</h3>
+          <div class="row">
+            <button id="prevBtn">上一步</button>
+            <button class="primary" id="nextBtn">下一步</button>
+            <button class="ghost" id="resetBtn">重来</button>
+          </div>
+        </div>
+        <div class="steps" id="stepPills"></div>
+        <div class="detail" id="detail"></div>
+      </div>
+
+      <h2>状态字段（草稿纸上写什么）</h2>
+      <div class="panel" style="padding: 4px 12px">
+        <table>
+          <thead>
+            <tr>
+              <th>字段</th>
+              <th>谁写入</th>
+              <th>干什么用</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="code">question / k</span></td>
+              <td>main</td>
+              <td>原题；本地检索条数</td>
+            </tr>
+            <tr>
+              <td><span class="code">strategy</span></td>
+              <td>route_question</td>
+              <td>simple 直答 / complex 检索</td>
+            </tr>
+            <tr>
+              <td><span class="code">localContext</span></td>
+              <td>local_retrieve</td>
+              <td>本地片段正文，给评估和生成</td>
+            </tr>
+            <tr>
+              <td><span class="code">evaluation</span></td>
+              <td>evaluate_local</td>
+              <td>enough / missing / web_query</td>
+            </tr>
+            <tr>
+              <td><span class="code">webContext</span></td>
+              <td>web_search</td>
+              <td>博查结果；有值则禁止再搜</td>
+            </tr>
+            <tr>
+              <td><span class="code">generation</span></td>
+              <td>direct / generate</td>
+              <td>最终回答</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>和其它 RAG 脚本比</h2>
+      <div class="panel" style="padding: 4px 12px">
+        <table>
+          <thead>
+            <tr>
+              <th>脚本</th>
+              <th>复杂题怎么走</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>naive-rag</td>
+              <td>一问一检一答</td>
+            </tr>
+            <tr>
+              <td>rag-query-router</td>
+              <td>路由后本地只检一轮</td>
+            </tr>
+            <tr>
+              <td>rag-multihop</td>
+              <td>拆子问题，多轮本地检索</td>
+            </tr>
+            <tr class="hl">
+              <td>rag-webfallback（本文件）</td>
+              <td>本地不够 → 联网一次 → 再生成</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <script>
+      const NODES = {
+        start: {
+          title: "START",
+          role: "入口",
+          does: ["main 调用 graph.invoke", "带上 question / k 等初始状态"],
+          writes: ["question", "k"],
+          analogy: "按下开始按钮",
+          x: 286,
+          y: 20,
+        },
+        route: {
+          title: "route_question",
+          role: "路由",
+          does: [
+            "问模型：这题要不要检索？",
+            "simple = 常识直答；complex = 走本地库",
+            "解析失败默认 complex",
+          ],
+          writes: ["strategy", "routeReason", "清空检索相关字段"],
+          analogy: "前台：这事要查资料还是随口答？",
+          x: 286,
+          y: 100,
+        },
+        direct: {
+          title: "direct_answer",
+          role: "直答",
+          does: ["不查 Milvus、不联网", "流式输出最终答案"],
+          writes: ["generation"],
+          analogy: "直接口头回答，不进书房",
+          x: 60,
+          y: 200,
+        },
+        local: {
+          title: "local_retrieve",
+          role: "本地检索",
+          does: [
+            "Milvus similaritySearchWithScore",
+            "命中片段写入 retrievedDocs",
+            "正文拼成 localContext",
+          ],
+          writes: ["retrievedDocs", "localContext"],
+          analogy: "先去自家书架抽几页",
+          x: 420,
+          y: 200,
+        },
+        evaluate: {
+          title: "evaluate_local",
+          role: "评估（可跑 1～2 次）",
+          does: [
+            "第一次：只看本地够不够",
+            "不够则给出 web_query",
+            "第二次（已有 web）：再评「本地+联网」",
+          ],
+          writes: ["evaluation（enough / missing / web_query）"],
+          analogy: "图书管理员：桌上材料够不够答完？",
+          x: 420,
+          y: 300,
+        },
+        web: {
+          title: "web_search",
+          role: "联网兜底",
+          does: [
+            "读 evaluation.web_query（空则用原题）",
+            "调博查 Bocha API",
+            "结果写入 webContext",
+            "固定回到 evaluate（不直接生成）",
+          ],
+          writes: ["webContext"],
+          analogy: "外借一次补充资料，再回来复评",
+          x: 620,
+          y: 300,
+        },
+        generate: {
+          title: "generate",
+          role: "生成",
+          does: [
+            "拼 localContext + webContext 进 prompt",
+            "流式回答原题",
+            "不够就明说不确定",
+          ],
+          writes: ["generation"],
+          analogy: "拿桌上所有材料写答卷",
+          x: 420,
+          y: 420,
+        },
+        end: {
+          title: "END",
+          role: "结束",
+          does: ["图执行结束", "main 打印最终策略"],
+          writes: [],
+          analogy: "交卷",
+          x: 286,
+          y: 520,
+        },
+      };
+
+      const EDGES = [
+        { from: "start", to: "route", label: "进入" },
+        { from: "route", to: "direct", label: "simple" },
+        { from: "route", to: "local", label: "complex" },
+        { from: "direct", to: "end", label: "完成", endSide: true },
+        { from: "local", to: "evaluate", label: "抽页完成" },
+        { from: "evaluate", to: "generate", label: "够了 / 已联网" },
+        { from: "evaluate", to: "web", label: "本地不够" },
+        { from: "web", to: "evaluate", label: "回环复评", back: true },
+        { from: "generate", to: "end", label: "完成" },
+      ];
+
+      const SCENARIOS = {
+        simple: {
+          title: "路径 A：简单直答",
+          when: "常识题，如「什么是 RAG？」",
+          path: ["start", "route", "direct", "end"],
+          edges: ["start→route", "route→direct", "direct→end"],
+        },
+        local_enough: {
+          title: "路径 B：本地就够",
+          when: "纯小说情节，本地库能覆盖",
+          path: ["start", "route", "local", "evaluate", "generate", "end"],
+          edges: [
+            "start→route",
+            "route→local",
+            "local→evaluate",
+            "evaluate→generate",
+            "generate→end",
+          ],
+        },
+        web_fallback: {
+          title: "路径 C：联网兜底",
+          when: "小说 + 剧集/外链（本文件默认题）",
+          path: [
+            "start",
+            "route",
+            "local",
+            "evaluate",
+            "web",
+            "evaluate",
+            "generate",
+            "end",
+          ],
+          edges: [
+            "start→route",
+            "route→local",
+            "local→evaluate",
+            "evaluate→web",
+            "web→evaluate",
+            "evaluate→generate",
+            "generate→end",
+          ],
+        },
+      };
+
+      const W = 148;
+      const H = 44;
+      let scenarioId = "web_fallback";
+      let step = 0;
+      let selected = "route";
+
+      function key(a, b) {
+        return `${a}→${b}`;
+      }
+
+      function center(id) {
+        const n = NODES[id];
+        return { x: n.x + W / 2, y: n.y + H / 2 };
+      }
+
+      function pathD(e) {
+        const a = center(e.from);
+        const b = center(e.to);
+        if (e.back) {
+          return `M ${a.x} ${a.y} C ${a.x + 110} ${a.y - 20}, ${b.x + 110} ${b.y + 20}, ${b.x} ${b.y}`;
+        }
+        if (e.endSide && e.from === "direct") {
+          return `M ${a.x} ${a.y + H / 2} C ${a.x - 40} ${a.y + 120}, ${b.x - 80} ${b.y - 40}, ${b.x} ${b.y}`;
+        }
+        const dy = b.y - a.y;
+        return `M ${a.x} ${a.y} C ${a.x} ${a.y + dy * 0.35}, ${b.x} ${b.y - dy * 0.35}, ${b.x} ${b.y}`;
+      }
+
+      function renderScenarios() {
+        const box = document.getElementById("scenarioBtns");
+        box.innerHTML = "";
+        Object.entries(SCENARIOS).forEach(([id, s]) => {
+          const btn = document.createElement("button");
+          btn.textContent = s.title;
+          btn.className = id === scenarioId ? "primary" : "";
+          btn.onclick = () => {
+            scenarioId = id;
+            step = 0;
+            selected = SCENARIOS[id].path[0];
+            renderAll();
+          };
+          box.appendChild(btn);
+        });
+        document.getElementById("scenarioWhen").textContent =
+          "何时出现：" + SCENARIOS[scenarioId].when;
+      }
+
+      function renderFlow() {
+        const sc = SCENARIOS[scenarioId];
+        const activeNodes = new Set(sc.path);
+        const activeEdges = new Set(sc.edges);
+        const edges = EDGES.map((e) => {
+          const on = activeEdges.has(key(e.from, e.to));
+          const a = center(e.from);
+          const b = center(e.to);
+          const lx = e.back ? (a.x + b.x) / 2 + 48 : (a.x + b.x) / 2;
+          const ly = e.back ? (a.y + b.y) / 2 - 8 : (a.y + b.y) / 2 - 6;
+          return `<path class="edge ${on ? "on" : ""} ${e.back ? "back" : ""}" d="${pathD(e)}"></path>
+            <text class="edge-label ${on ? "on" : ""}" x="${lx}" y="${ly}" text-anchor="middle">${e.label}</text>`;
+        }).join("");
+
+        const nodes = Object.entries(NODES)
+          .map(([id, n]) => {
+            const cls = selected === id ? "selected" : activeNodes.has(id) ? "active" : "idle";
+            return `<g class="node-box ${cls}" data-id="${id}">
+              <rect x="${n.x}" y="${n.y}" width="${W}" height="${H}" rx="8"></rect>
+              <text x="${n.x + W / 2}" y="${n.y + 18}" text-anchor="middle" font-size="12" font-weight="600" fill="${selected === id ? "#fff" : "#1c1a16"}">${n.title}</text>
+              <text x="${n.x + W / 2}" y="${n.y + 34}" text-anchor="middle" font-size="10" fill="${selected === id ? "#e8fff9" : "#6b6458"}">${n.role}</text>
+            </g>`;
+          })
+          .join("");
+
+        document.getElementById("flow").innerHTML = `
+          <svg class="flow" viewBox="0 0 820 590" role="img" aria-label="RAG webfallback flow">
+            ${edges}
+            ${nodes}
+          </svg>`;
+
+        document.querySelectorAll(".node-box").forEach((g) => {
+          g.addEventListener("click", () => {
+            const id = g.getAttribute("data-id");
+            selected = id;
+            const idx = sc.path.indexOf(id);
+            if (idx >= 0) step = idx;
+            renderAll();
+          });
+        });
+      }
+
+      function renderStepper() {
+        const sc = SCENARIOS[scenarioId];
+        const safe = Math.min(Math.max(step, 0), sc.path.length - 1);
+        step = safe;
+        const currentId = sc.path[safe];
+        const current = NODES[currentId];
+        const prevId = safe > 0 ? sc.path[safe - 1] : null;
+
+        document.getElementById("stepTitle").textContent =
+          `逐步播放 · 第 ${safe + 1} / ${sc.path.length} 步`;
+        document.getElementById("currentStepLabel").textContent = current.title;
+        document.getElementById("prevBtn").disabled = safe === 0;
+        document.getElementById("nextBtn").disabled = safe >= sc.path.length - 1;
+
+        const pills = document.getElementById("stepPills");
+        pills.innerHTML = "";
+        sc.path.forEach((id, i) => {
+          const btn = document.createElement("button");
+          btn.textContent = `${i + 1}. ${NODES[id].title}`;
+          btn.className = i === safe ? "primary" : "";
+          btn.onclick = () => {
+            step = i;
+            selected = id;
+            renderAll();
+          };
+          pills.appendChild(btn);
+        });
+
+        const writes =
+          current.writes.length > 0
+            ? `<h3>写入状态</h3><div class="writes">${current.writes
+                .map((w) => `<span class="code">${w}</span>`)
+                .join("")}</div>`
+            : "";
+
+        document.getElementById("detail").innerHTML = `
+          <div class="row between" style="margin-bottom:8px">
+            <h3 style="margin:0">当前节点：${current.title}</h3>
+            <span class="badge">${current.role}</span>
+          </div>
+          <p class="analogy">${current.analogy}</p>
+          ${prevId ? `<p class="hint">从 ${NODES[prevId].title} 过来</p>` : ""}
+          <h3>这一步在干什么</h3>
+          <div>${current.does.map((d) => `<div>· ${d}</div>`).join("")}</div>
+          ${writes}
+          <div class="foot">对应代码：src/advanced-rag/rag-webfallback.mjs${
+            currentId === "start" || currentId === "end"
+              ? " 的 main / 图边界"
+              : ` 里的 ${current.title} 节点`
+          }</div>`;
+      }
+
+      function renderAll() {
+        renderScenarios();
+        renderFlow();
+        renderStepper();
+      }
+
+      document.getElementById("prevBtn").onclick = () => {
+        step = Math.max(0, step - 1);
+        selected = SCENARIOS[scenarioId].path[step];
+        renderAll();
+      };
+      document.getElementById("nextBtn").onclick = () => {
+        const sc = SCENARIOS[scenarioId];
+        step = Math.min(sc.path.length - 1, step + 1);
+        selected = sc.path[step];
+        renderAll();
+      };
+      document.getElementById("resetBtn").onclick = () => {
+        step = 0;
+        selected = SCENARIOS[scenarioId].path[0];
+        renderAll();
+      };
+
+      renderAll();
+    </script>
+  </body>
+</html>
