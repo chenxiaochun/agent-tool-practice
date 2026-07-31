@@ -47,10 +47,23 @@
  */
 
 import 'dotenv/config';
+import chalk from 'chalk';
 import { Annotation, END, START, StateGraph } from '@langchain/langgraph';
 import { Milvus } from '@langchain/community/vectorstores/milvus';
 /** model = 聊天模型；embeddings = 向量模型（见 ../model.mjs） */
 import { model, embeddings } from '../model.mjs';
+
+/** 各阶段控制台颜色：一眼区分路由 / 拆题 / 检索 / 规划 / 生成 / 汇总 */
+const log = {
+  route: chalk.cyan,
+  decompose: chalk.magenta,
+  retrieve: chalk.yellow,
+  plan: chalk.blue,
+  answer: chalk.green,
+  setup: chalk.gray,
+  summary: chalk.whiteBright,
+  err: chalk.red,
+};
 
 // ============================================================================
 // 1. 图状态：多跳流水线共用的「草稿纸」
@@ -116,7 +129,7 @@ async function retrieveRelevantContent(question, k) {
       index: doc.metadata?.index ?? '未知',
     }));
   } catch (error) {
-    console.error('检索内容时出错:', error.message);
+    console.error(log.err('检索内容时出错:'), error.message);
     return [];
   }
 }
@@ -163,7 +176,7 @@ function parseJsonObject(raw) {
  * 步骤：1. 调模型拿 JSON  2. 解析 strategy  3. 重置多跳相关状态
  */
 const routeQuestionNode = async (state) => {
-  console.log('---ROUTE_QUESTION---');
+  console.log(log.route.bold('\n---ROUTE_QUESTION---'));
   // 1. 普通 invoke；提示里显式要求 JSON，兼容当前网关
   const response = await model.invoke(`
 你是问答路由器。请判断用户问题是否需要外部检索，并用 JSON 返回结果。
@@ -183,7 +196,7 @@ const routeQuestionNode = async (state) => {
     parsed?.reason ?? response.content ?? '无法解析路由，默认 complex'
   );
 
-  console.log(`路由策略: ${strategy} (${reason})`);
+  console.log(log.route(`路由策略: ${strategy} (${reason})`));
   // 3. 清空上一轮残留，给多跳路径一个干净起点
   return {
     strategy,
@@ -207,7 +220,7 @@ const routeQuestionNode = async (state) => {
  * 步骤：1. 模型拆题  2. 清洗列表  3. 把第 0 条设为即将检索的 currentQuery
  */
 const decomposeQuestionNode = async (state) => {
-  console.log('---DECOMPOSE_QUESTION---');
+  console.log(log.decompose.bold('\n---DECOMPOSE_QUESTION---'));
   const response =
     await model.invoke(`你是《天龙八部》多跳问答的「子问题拆解器」。请用 JSON 返回结果。
 
@@ -231,9 +244,13 @@ ${state.question}
     throw new Error('decompose_question: sub_questions 为空');
   }
 
-  console.log(`拆解 ${subQuestions.length} 条子问题 (${parsed?.reason ?? ''})`);
+  console.log(
+    log.decompose(
+      `拆解 ${subQuestions.length} 条子问题 (${parsed?.reason ?? ''})`
+    )
+  );
   subQuestions.forEach((q, i) => {
-    console.log(`  [${i + 1}] ${q}`);
+    console.log(log.decompose(`  [${i + 1}] ${q}`));
   });
 
   return {
@@ -265,19 +282,23 @@ const retrieveNode = async (state) => {
 
   const round = state.retrievalCount + 1;
   console.log(
-    `---RETRIEVE (第 ${round} 轮，子问题 ${idx + 1}/${subs.length})---`
+    log.retrieve.bold(
+      `\n---RETRIEVE (第 ${round} 轮，子问题 ${idx + 1}/${subs.length})---`
+    )
   );
-  console.log(`查询: ${q}`);
+  console.log(log.retrieve(`查询: ${q}`));
 
   // 2～3. 检索并入累计文档池
   const newDocs = await retrieveRelevantContent(q, state.k);
   const merged = mergeUnique(state.documents ?? [], newDocs);
 
   if (newDocs.length === 0) {
-    console.log('本轮未命中文档');
+    console.log(log.retrieve('本轮未命中文档'));
   } else {
     console.log(
-      `本轮命中 ${newDocs.length} 条，累计去重后 ${merged.length} 条`
+      log.retrieve(
+        `本轮命中 ${newDocs.length} 条，累计去重后 ${merged.length} 条`
+      )
     );
     newDocs.forEach((item, i) => {
       const preview =
@@ -285,9 +306,11 @@ const retrieveNode = async (state) => {
           ? `${item.content.substring(0, 120)}...`
           : item.content;
       console.log(
-        `[R${i + 1}] score=${Number(item.score).toFixed(4)} chapter=${item.chapter_num} index=${item.index}`
+        log.retrieve(
+          `[R${i + 1}] score=${Number(item.score).toFixed(4)} chapter=${item.chapter_num} index=${item.index}`
+        )
       );
-      console.log(`      ${preview}`);
+      console.log(log.retrieve.dim(`      ${preview}`));
     });
   }
 
@@ -310,7 +333,7 @@ const retrieveNode = async (state) => {
  * 步骤：1. 拼现状给模型  2. 解析 nextAction  3. 用硬规则钳制  4. 写入 plannedNext
  */
 const planNextStepNode = async (state) => {
-  console.log('---PLAN_NEXT_STEP---');
+  console.log(log.plan.bold('\n---PLAN_NEXT_STEP---'));
   const subs = state.subQuestions ?? [];
   const nextIdx = state.nextSubIdx ?? 0;
   const remaining = subs.length - nextIdx;
@@ -372,7 +395,9 @@ ${docStr}
   if (remaining <= 0) finalNext = 'generate';
 
   console.log(
-    `[决策] plannedNext=${finalNext} (模型建议=${nextAction}) (${reason})`
+    log.plan(
+      `[决策] plannedNext=${finalNext} (模型建议=${nextAction}) (${reason})`
+    )
   );
 
   // 4. 条件边 afterPlan 只读 plannedNext
@@ -397,8 +422,8 @@ function afterPlan(state) {
 
 /** simple 路径：不检索，模型直接答 */
 const directAnswerNode = async (state) => {
-  console.log('---DIRECT_ANSWER---');
-  process.stdout.write('\n【AI 回答（流式）】\n');
+  console.log(log.answer.bold('\n---DIRECT_ANSWER---'));
+  process.stdout.write(log.answer.bold('\n【AI 回答（流式）】\n'));
   let generation = '';
   const stream = await model.stream(`你是一个中文问答助手，请直接简洁回答问题。
 
@@ -408,7 +433,7 @@ const directAnswerNode = async (state) => {
     const text = typeof chunk.content === 'string' ? chunk.content : '';
     if (!text) continue;
     generation += text;
-    process.stdout.write(text);
+    process.stdout.write(log.answer(text));
   }
   process.stdout.write('\n');
   return { generation };
@@ -419,7 +444,7 @@ const directAnswerNode = async (state) => {
  * 易混点：这里答的是用户原始 question，不是某一条子问题。
  */
 const generateNode = async (state) => {
-  console.log('---GENERATE---');
+  console.log(log.answer.bold('\n---GENERATE---'));
   const context = state.documents
     .map(
       (item, i) =>
@@ -428,7 +453,7 @@ const generateNode = async (state) => {
 内容: ${item.content}`
     )
     .join('\n\n━━━━━\n\n');
-  process.stdout.write('\n【AI 回答（流式）】\n');
+  process.stdout.write(log.answer.bold('\n【AI 回答（流式）】\n'));
   let generation = '';
   const stream =
     await model.stream(`你是一个专业的《天龙八部》小说助手。基于小说内容回答问题，用准确、详细的语言。
@@ -450,7 +475,7 @@ AI 助手的回答:`);
     const text = typeof chunk.content === 'string' ? chunk.content : '';
     if (!text) continue;
     generation += text;
-    process.stdout.write(text);
+    process.stdout.write(log.answer(text));
   }
   process.stdout.write('\n');
   return { generation };
@@ -500,10 +525,10 @@ async function main() {
 
   // 9.1 导出 Mermaid，对照节点与环
   const drawable = await graph.getGraphAsync();
-  console.log(drawable.drawMermaid({ withStyles: true }));
+  console.log(log.setup(drawable.drawMermaid({ withStyles: true })));
 
   // 9.2 连接已有集合（只读）
-  console.log('连接到 Milvus...');
+  console.log(log.setup('连接到 Milvus...'));
   vectorStore = await Milvus.fromExistingCollection(embeddings, {
     collectionName: 'ebook_collection',
     url: 'localhost:19530',
@@ -521,24 +546,24 @@ async function main() {
     metric_type: 'COSINE',
     params: JSON.stringify({ ef: 64 }),
   };
-  console.log('✓ 已连接\n');
+  console.log(log.setup('✓ 已连接\n'));
 
   // 9.3 检索前集合必须 load
   try {
     await vectorStore.client.loadCollection({
       collection_name: 'ebook_collection',
     });
-    console.log('✓ 集合 ebook_collection 已加载\n');
+    console.log(log.setup('✓ 集合 ebook_collection 已加载\n'));
   } catch (error) {
     if (!error.message.includes('already loaded')) {
       throw error;
     }
-    console.log('✓ 集合 ebook_collection 已处于加载状态\n');
+    console.log(log.setup('✓ 集合 ebook_collection 已处于加载状态\n'));
   }
 
-  console.log('='.repeat(80));
-  console.log(`问题: ${question}`);
-  console.log('='.repeat(80));
+  console.log(log.summary.bold('='.repeat(80)));
+  console.log(log.summary.bold(`问题: ${question}`));
+  console.log(log.summary.bold('='.repeat(80)));
 
   // 9.4 塞初始状态，跑完整条图（含可能的 retrieve 环）
   const result = await graph.invoke({
@@ -559,33 +584,39 @@ async function main() {
   // 9.5 复杂路径：回放子问题与累计证据，便于对照模型回答
   if (result.strategy === 'complex') {
     if (result.subQuestions?.length) {
-      console.log('\n【子问题序列】');
-      result.subQuestions.forEach((s, i) => console.log(`  ${i + 1}. ${s}`));
+      console.log(log.decompose.bold('\n【子问题序列】'));
+      result.subQuestions.forEach((s, i) =>
+        console.log(log.decompose(`  ${i + 1}. ${s}`))
+      );
     }
-    console.log('\n【检索相关内容（累计）】');
+    console.log(log.retrieve.bold('\n【检索相关内容（累计）】'));
     if (result.documents.length === 0) {
-      console.log('未找到相关内容');
+      console.log(log.retrieve('未找到相关内容'));
     } else {
       result.documents.forEach((item, i) => {
         console.log(
-          `\n[片段 ${i + 1}] 相似度: ${Number(item.score).toFixed(4)}`
+          log.retrieve(
+            `\n[片段 ${i + 1}] 相似度: ${Number(item.score).toFixed(4)}`
+          )
         );
-        console.log(`书籍: ${item.book_id}`);
-        console.log(`章节: 第 ${item.chapter_num} 章`);
-        console.log(`片段索引: ${item.index}`);
+        console.log(log.retrieve(`书籍: ${item.book_id}`));
+        console.log(log.retrieve(`章节: 第 ${item.chapter_num} 章`));
+        console.log(log.retrieve(`片段索引: ${item.index}`));
         console.log(
-          `内容: ${item.content.substring(0, 200)}${item.content.length > 200 ? '...' : ''}`
+          log.retrieve.dim(
+            `内容: ${item.content.substring(0, 200)}${item.content.length > 200 ? '...' : ''}`
+          )
         );
       });
     }
     console.log(
-      `\n检索轮数: ${result.retrievalCount} / ${result.maxRetrievals}`
+      log.plan(`\n检索轮数: ${result.retrievalCount} / ${result.maxRetrievals}`)
     );
   }
 
-  console.log(`\n最终策略: ${result.strategy}`);
+  console.log(log.summary.bold(`\n最终策略: ${result.strategy}`));
   if (!result.generation?.trim()) {
-    console.log('模型未返回内容。');
+    console.log(log.err('模型未返回内容。'));
   }
 }
 
@@ -601,6 +632,6 @@ async function main() {
  */
 
 main().catch((err) => {
-  console.error('运行失败:', err);
+  console.error(log.err('运行失败:'), err);
   process.exit(1);
 });
