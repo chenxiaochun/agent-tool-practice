@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import chalk from 'chalk';
 import { Neo4jGraph } from '@langchain/community/graphs/neo4j_graph';
+import { awaitAllCallbacks } from '@langchain/core/callbacks/promises';
 import { ChatOpenAI } from '@langchain/openai';
 import { StateGraph, END, START } from '@langchain/langgraph';
 import { HumanMessage } from '@langchain/core/messages';
@@ -178,10 +179,14 @@ async function runGraphRAG(question) {
 // ======================
 (async () => {
   await printWorkflowMermaid();
+  // 三条并行跑；本地都会跑完，但 LangSmith 上报是异步的
   await Promise.all([
     runGraphRAG('我们这款珍珠奶茶有哪些配料？'),
     runGraphRAG('台式奶茶的饮品都有哪些配料？'),
     runGraphRAG('珍珠奶茶适合哪些人群饮用？'),
   ]);
-  process.exit(0);
+  // 等回调（含 LangSmith trace）刷完再退出，否则后完成的 run 会一直停在 loading
+  await awaitAllCallbacks();
+  // Neo4j driver 会挂起事件循环；关连接后进程可正常结束（不要用 process.exit 硬砍）
+  await graph.close();
 })().catch(console.error);
