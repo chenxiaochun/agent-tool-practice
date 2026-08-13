@@ -5,3 +5,4 @@ volumes/
 chat_history.json
 *.mp3
 *.sqlite
+rabbitmq_data
