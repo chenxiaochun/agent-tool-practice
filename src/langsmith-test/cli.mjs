@@ -1,5 +1,8 @@
 import 'dotenv/config';
+import { initLangfuseTracing, shutdownLangfuseTracing } from '../langfuse/tracing.mjs';
 import { ask } from './rag-agent.mjs';
+
+initLangfuseTracing();
 
 const DEFAULT_QUESTIONS = [
   '无理由退货要在几天内？',
@@ -33,10 +36,18 @@ for (let i = 0; i < questions.length; i++) {
   console.log(`\n${'='.repeat(50)}`);
   console.log(`问题 ${i + 1}: ${question}`);
 
-  const { answer, context } = await ask(question);
+  const { answer, context, traceId } = await ask(question, {
+    sessionId: 'cli-demo-session',
+    tags: ['cli'],
+  });
   console.log(`\n答: ${answer}`);
+  if (traceId) {
+    console.log(`\nLangfuse trace: ${traceId}`);
+  }
   printContext(context);
 }
 
 console.log(`\n${'='.repeat(50)}`);
 console.log(`共 ${questions.length} 个问题`);
+
+await shutdownLangfuseTracing();

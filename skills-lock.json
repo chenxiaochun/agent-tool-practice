@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "langfuse": {
+      "source": "github/langfuse/skills",
+      "sourceType": "github",
+      "skillPath": "skills/langfuse/SKILL.md",
+      "computedHash": "manual-install"
+    },
     "excalidraw-diagram-generator": {
       "source": "github/awesome-copilot",
       "sourceType": "github",

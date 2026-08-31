@@ -4,6 +4,7 @@ import { ChatPromptTemplate } from '@langchain/core/prompts';
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { RunnableSequence } from '@langchain/core/runnables';
 import { Milvus } from '@langchain/community/vectorstores/milvus';
+import { traceLangChainRun } from '../langfuse/tracing.mjs';
 import { embeddings, model } from '../model.mjs';
 
 const vectorStore = await Milvus.fromExistingCollection(embeddings, {
@@ -52,10 +53,38 @@ const workflow = new StateGraph(GraphState)
 
 export const ragApp = workflow.compile();
 
-export async function ask(question) {
-  const result = await ragApp.invoke({ question });
+export async function ask(question, options = {}) {
+  const { output, traceId } = await traceLangChainRun(
+    'customer-support-rag',
+    { question },
+    async (langfuseHandler) => {
+      const result = await ragApp.invoke(
+        { question },
+        {
+          callbacks: [langfuseHandler],
+          runName: 'customer-support-rag',
+          metadata: {
+            feature: 'customer-support',
+            ...(options.sessionId ? { langfuseSessionId: options.sessionId } : {}),
+            ...(options.userId ? { langfuseUserId: options.userId } : {}),
+          },
+        },
+      );
+
+      return {
+        answer: result.answer,
+        context: result.context ?? [],
+      };
+    },
+    {
+      sessionId: options.sessionId,
+      userId: options.userId,
+      tags: ['rag', 'customer-support', ...(options.tags ?? [])],
+    },
+  );
+
   return {
-    answer: result.answer,
-    context: result.context ?? [],
+    ...output,
+    traceId,
   };
 }
