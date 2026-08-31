@@ -4,7 +4,7 @@ import OSS from 'ali-oss';
 async function main() {
   const config = {
     region: 'oss-cn-beijing',
-    bucket: 'agent-bucket123',
+    bucket: 'agent-tool-practice',
     accessKeyId: process.env.OSS_ACCESS_KEY_ID,
     accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET,
   };
